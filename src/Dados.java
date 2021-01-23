@@ -1,108 +1,312 @@
 import java.util.*;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class Dados {
-    private Map<String,Cliente> clientes;
+    /**
+     * Variaveis de instancia
+     */
+    private final Map<String,Cliente> clientes;
+    private final ReentrantLock l;
+    private final Condition c;
+    private final List<Posicao> listaEsperaVazia;
 
+    /**
+     * Construtor
+     */
     public Dados() {
+        this.l = new ReentrantLock();
         this.clientes = new HashMap<>();
+        this.c = l.newCondition();
+        this.listaEsperaVazia = new ArrayList<>();
     }
 
-    private class Posicao {
-        public int x;
-        public int y;
+    /**
+     * Bloqueia o objeto
+     */
+    public void lock (){ this.l.lock(); }
 
-        public Posicao(int x, int y) {
-            this.x = x;
-            this.y = y;
+    /**
+     * Desbloqueia o objeto
+     */
+    public void unlock(){ this.l.unlock(); }
+
+    /**
+     * Adormece sobre o objeto
+     */
+    public void await() throws InterruptedException { this.c.await();}
+
+    /**
+     * Adiciona posicao a lista.
+     * @param p Posicao
+     */
+    public void avisaPosicao (Posicao p) { this.listaEsperaVazia.add(p);}
+
+    /**
+     * Acorda adormecidos sobre o objeto
+     */
+    public void signalAll (){ this.c.signalAll();}
+
+    /**
+     * Remove posicao da lista
+     * @param p Posicao
+     */
+    public void listaEsperaRemove (Posicao p) { listaEsperaVazia.remove(p);}
+
+    /**
+     * Conta o numero de pessoas numa dada coordenada
+     * @param x coordenada
+     * @param y coordenada
+     * @return int
+     */
+    public int peopleInPosition(int x,int y){
+        Posicao p = new Posicao(x,y);
+        int total = 0;
+        Cliente cli;
+
+        try {
+            this.l.lock();
+
+            for (Map.Entry<String, Cliente> aux : this.clientes.entrySet()) {
+                cli = aux.getValue();
+                try {
+                    cli.lock();
+                    if (cli.isInPosition(p)) total++;
+                } finally {
+                    cli.unlock();
+                }
+            }
+        } finally {
+            this.l.unlock();
         }
-
-        @Override
-        public String toString() {
-            return "Posicao{" +
-                    "x=" + x +
-                    ", y=" + y +
-                    '}';
-        }
+        return total;
     }
 
-    private class Cliente {
-        public String nome;
-        public String password;
-        public boolean infectado;
-        public List<Posicao> posicoes;
-
-        public Cliente(String nome, String password) {
-            this.nome = nome;
-            this.password = password;
-            this.infectado = false;
-            this.posicoes = new ArrayList<>();
-        }
-
-        @Override
-        public String toString() {
-            return "Cliente{" +
-                    "nome=" + nome +
-                    ", password=" + password  +
-                    ", infectado=" + infectado +
-                    ", posicoes=" + posicoes.toString() +
-                    '}';
-        }
+    /**
+     * Verifica se a posicao passada esta na lista
+     * @param p Posicao
+     * @return boolean
+     */
+    public boolean listaEsperaVaziaContains(Posicao p){
+        return this.listaEsperaVazia.contains(p);
     }
 
-    public void addPosicao(String cliente,Posicao p) {
-        this.clientes.get(cliente).posicoes.add(p);
-    }
-
-    public void setInfectado(String cliente, boolean b) {
-        this.clientes.get(cliente).infectado = b;
-    }
-
-    public void setInfectadoTrue(byte[] bytes) {
-        String s = new String(bytes);
-        this.setInfectado(s,true);
-    }
-
-    public int autenticar(String cliente, String pass) {
-        if (this.clientes.containsKey(cliente)) {
-            if (this.clientes.get(cliente).infectado) return -1;
-            if (this.clientes.get(cliente).password.equals(pass)) return 1;
-            else return 2;
-        } else return 0;
-    }
-
-    public int autenticar(byte[] bytes) {
-        String s = new String(bytes);
-        String[] temp = s.split(" ",2);
-        return autenticar(temp[0],temp[1]);
-    }
-
-
-    public int registar(String cliente, String pass) {
-        if (this.clientes.containsKey(cliente)) return 0;
-        else {
-            this.clientes.put(cliente, new Cliente(cliente, pass));
-            return 1;
-        }
-    }
-
-    public int registar(byte[] bytes) {
-        String s = new String(bytes);
-        String[] temp = s.split(" ",2);
-        return registar(temp[0],temp[1]);
-    }
-
+    /**
+     * Imprime o estado dos clientes
+     */
     public void printEstado() {
-        for (Map.Entry<String,Cliente> aux : this.clientes.entrySet()) {
-            System.out.println(aux.getValue().toString());
+        Cliente cli;
+        try {
+            this.l.lock();
+
+            for (Map.Entry<String, Cliente> aux : this.clientes.entrySet()) {
+                cli = aux.getValue();
+                cli.lock();
+                try {
+                    System.out.println(cli.toString());
+                } finally {
+                    cli.unlock();
+                }
+            }
+        } finally {
+            this.l.unlock();
         }
     }
 
-    public void addPosicao(byte[] bytes) {
-        String s = new String(bytes);
-        String[] temp = s.split(" ",3);
-        Posicao p = new Posicao(Integer.parseInt(temp[1]),Integer.parseInt(temp[2]));
-
-        addPosicao(temp[0],p);
+    /**
+     * Regista um novo cliente
+     * @param nome nome
+     * @param pass password
+     * @return int
+     */
+    public int registar(String nome, String pass) {
+        int res;
+        try {
+            this.l.lock();
+            if (this.clientes.containsKey(nome)) res = 0;
+            else {
+                this.clientes.put(nome, new Cliente(nome, pass));
+                res = 1;
+            }
+        } finally {
+            this.l.unlock();
+        }
+        return res;
     }
 
+    /**
+     * Regista um novo cliente moderador
+     * @param nome nome
+     * @param pass password
+     * @return int
+     */
+    public int registarModerador(String nome, String pass) {
+        int res;
+        try {
+            this.l.lock();
+            if (this.clientes.containsKey(nome)) res = 0;
+            else {
+                Cliente client = new Cliente(nome, pass);
+                client.setModerador(true);
+                this.clientes.put(nome, client);
+                res = 1;
+            }
+        } finally {
+            this.l.unlock();
+        }
+        return res;
+    }
+
+    /**
+     * Autentica um cliente
+     * @param nome nome
+     * @param pass password
+     * @return int
+     */
+    public int autenticar(String nome, String pass) {
+       Cliente cli;
+       int res;
+       try {
+           this.l.lock();
+           if (this.clientes.containsKey(nome)) {
+               cli = this.clientes.get(nome);
+               try {
+                   cli.lock();
+                   if (cli.isInfectado()) {
+                       res = -1;
+
+                   } else if (cli.isLogin()) {
+                       res = 3;
+
+                   } else if (cli.getPassword().equals(pass)) {
+                       cli.setLogin(true);
+                       res = 1;
+
+                   } else res = 2;
+
+               } finally {
+                   cli.unlock();
+               }
+
+           } else {
+               res = 0;
+           }
+       } finally {
+           this.l.unlock();
+       }
+       return res;
+    }
+
+    /**
+     * Redefine estado de infecao de um cliente
+     * @param nome nome
+     * @param b estado de infecao
+     */
+    public void setInfectado(String nome,boolean b) {
+        Cliente ori;
+        List<Posicao> esteveEm;
+        Cliente cli;
+        try {
+            l.lock();
+            ori = this.clientes.get(nome);
+            try {
+                ori.lock();
+                esteveEm = this.clientes.get(nome).getPosicoes();
+                ori.setInfectado(b);
+                ori.removeAllPositions();
+            } finally {
+                ori.unlock();
+            }
+
+            for (Map.Entry<String, Cliente> aux : this.clientes.entrySet()) {
+                cli = aux.getValue();
+                try {
+                    cli.lock();
+                    if (!cli.isInfectado() && !cli.getAviso()) {
+                        for (Posicao pos : cli.getPosicoes()) {
+                            if (esteveEm.contains(pos)) {
+                                cli.setAviso(true);
+                                cli.signalAll();
+                                break;
+                            }
+                        }
+                    }
+                } finally {
+                    cli.unlock();
+                }
+            }
+        } finally {
+            l.unlock();
+        }
+    }
+
+    /**
+     * Retorna o cliente com dado nome
+     * @param nome nome
+     * @return Cliente
+     */
+    public Cliente getCliente(String nome) {
+        try {
+            l.lock();
+            return this.clientes.get(nome);
+        } finally {
+            l.unlock();
+        }
+    }
+
+    /**
+     * Converte o mapa a uma string
+     * @return String
+     */
+    public String mapaModerador(){
+        StringBuilder s= new StringBuilder();
+        Map<Posicao,Integer> infectados = new HashMap<>();
+        Map<Posicao,Integer> visitantes = new HashMap<>();
+        Cliente cli;
+        int xMax=-1; int yMax=-1;
+        try {
+            l.lock();
+            for (Map.Entry<String, Cliente> aux : this.clientes.entrySet()) {
+                cli = aux.getValue();
+                cli.lock();
+                try {
+                    for (Posicao p : cli.getPosicoes()) {
+                        if (p.x > xMax) xMax = p.x;
+                        if (p.y > yMax) yMax = p.y;
+                        if (cli.isInfectado()) {
+                            if (infectados.containsKey(p)) {
+                                infectados.put(p, infectados.get(p) + 1);
+                            } else {
+                                infectados.put(p, 1);
+                            }
+                        } else {
+                            if (visitantes.containsKey(p)) {
+                                visitantes.put(p, visitantes.get(p) + 1);
+                            } else {
+                                visitantes.put(p, 1);
+                            }
+                        }
+                    }
+                } finally {
+                    cli.unlock();
+                }
+            }
+        } finally {
+            l.unlock();
+        }
+        if (xMax==-1 && yMax==-1) return "# -> Mapa Vazio";
+        s.append("\n");
+        for (int i=yMax; i>=0; i--) {
+            for (int j=0; j<=xMax; j++) {
+                Posicao p = new Posicao (j,i);
+                s.append("(X=").append(j).append(",Y=").append(i).append(")=>");
+                s.append("(I=").append(infectados.getOrDefault(p, 0));
+                s.append(",V=").append(visitantes.getOrDefault(p, 0)).append(")");
+                s.append(" || ");
+            }
+            s.append("\n");
+        }
+        return s.toString();
+    }
 }
+

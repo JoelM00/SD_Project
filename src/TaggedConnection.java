@@ -4,12 +4,18 @@ import java.net.Socket;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class TaggedConnection implements Closeable {
-    private Socket s;
-    private DataInputStream in;
-    private DataOutputStream out;
-    private ReentrantLock wl;
-    private ReentrantLock rl;
+    /**
+     * Variaveis de instancia
+     */
+    private final Socket s;
+    private final DataInputStream in;
+    private final DataOutputStream out;
+    private final ReentrantLock wl;
+    private final ReentrantLock rl;
 
+    /**
+     * Classe auxiliar
+     */
     public static class Frame {
         public int tag;
         public byte[] dados;
@@ -20,7 +26,12 @@ public class TaggedConnection implements Closeable {
         }
     }
 
-    public TaggedConnection(Socket s) throws Exception {
+    /**
+     * Construtor parametrizado
+     * @param s
+     * @throws IOException Erro de Input/Output
+     */
+    public TaggedConnection(Socket s) throws IOException {
         this.s = s;
         this.in = new DataInputStream(new BufferedInputStream(s.getInputStream()));
         this.out = new DataOutputStream(new BufferedOutputStream(s.getOutputStream()));
@@ -28,10 +39,12 @@ public class TaggedConnection implements Closeable {
         this.rl = new ReentrantLock();
     }
 
-    public void send(Frame f) throws Exception {
-        this.send(f.tag,f.dados);
-    }
-
+    /**
+     * Escritor de informacoes no socket
+     * @param tag identificador
+     * @param dados bytes de dados
+     * @throws IOException Erro de Input/Output
+     */
     public void send(int tag,byte[] dados) throws IOException {
         try {
             wl.lock();
@@ -44,6 +57,11 @@ public class TaggedConnection implements Closeable {
         }
     }
 
+    /**
+     * Leitor de informacoes no socket
+     * @return Frame
+     * @throws IOException Erro de Input/Output
+     */
     public Frame receive() throws IOException {
         try {
             rl.lock();
@@ -57,6 +75,10 @@ public class TaggedConnection implements Closeable {
         }
     }
 
+    /**
+     * Fecha socket
+     * @throws IOException Erro de Input/Output
+     */
     @Override
     public void close() throws IOException {
         this.s.close();
